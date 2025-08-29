@@ -465,3 +465,371 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "DebugConfiguration.h"
 #include "RF95Configuration.h"
+
+
+// ============================================================================
+// BITCHAT MESH CONFIGURATION - Updated with Proper Libraries (v2.0)
+// ============================================================================
+
+// Enable BitChat mesh with proper crypto libraries
+#define ENABLE_BITCHAT_MESH
+
+// Disable old mesh implementation (comment out if still needed for migration)
+// #define ENABLE_GHOSTDOME_BLE_MESH
+
+// ============================================================================
+// REQUIRED LIBRARY DEPENDENCIES - Based on BitChat Android
+// ============================================================================
+
+// CRITICAL: Add these libraries to platformio.ini:
+//
+// lib_deps = 
+//     bblanchon/ArduinoJson@^6.21.0
+//     h2zero/NimBLE-Arduino@^1.4.0
+//     rweather/Crypto@^0.4.0              # X25519, Ed25519, AES-GCM
+//     bodiroga/ArduinoLZ4@^1.0.0           # LZ4 compression
+//     argon2id/ArduinoArgon2@^1.0.0        # Argon2id key derivation
+//     ivanseidel/ArduinoThread@^2.1.1      # Thread management
+
+// ============================================================================
+// BITCHAT MESH SETTINGS - Matching Android Implementation Exactly
+// ============================================================================
+
+// Protocol Configuration (matching BitChat Android exactly)
+#define BITCHAT_PROTOCOL_VERSION 1
+#define BITCHAT_MAX_TTL 7
+#define BITCHAT_DEFAULT_TTL 7
+#define BITCHAT_MAX_PACKET_SIZE 4096
+#define BITCHAT_HEADER_SIZE 13
+
+// Peer Management (matching BitChat limits)
+#define BITCHAT_MAX_PEERS 50
+#define BITCHAT_PEER_TIMEOUT_MS 30000  // 30 seconds
+#define BITCHAT_CLEANUP_INTERVAL_MS 30000
+
+// Message Management (optimized for ESP32)
+#define BITCHAT_MAX_SEEN_MESSAGES 1000
+#define BITCHAT_MAX_RELAY_HISTORY 500
+#define BITCHAT_MESSAGE_MEMORY_MS 300000  // 5 minutes
+#define BITCHAT_RELAY_MEMORY_MS 60000     // 1 minute
+
+// Store and Forward (matching BitChat)
+#define BITCHAT_STORE_FORWARD_ENABLED true
+#define BITCHAT_MAX_CACHED_MESSAGES_PER_PEER 100
+#define BITCHAT_MESSAGE_CACHE_AGE_MS 86400000  // 24 hours
+
+// Fragmentation (matching BitChat limits)
+#define BITCHAT_FRAGMENTATION_ENABLED true
+#define BITCHAT_MAX_FRAGMENT_SIZE 512
+#define BITCHAT_MAX_MESSAGE_SIZE 32768  // 32KB
+#define BITCHAT_FRAGMENT_TIMEOUT_MS 30000
+
+// Compression and Padding (matching BitChat exactly)
+#define BITCHAT_COMPRESSION_ENABLED true
+#define BITCHAT_COMPRESSION_THRESHOLD 100  // bytes (BitChat Android uses 100 bytes)
+#define BITCHAT_PADDING_ENABLED true
+
+// ============================================================================
+// BLUETOOTH LE CONFIGURATION - BitChat Compatible
+// ============================================================================
+
+// Device Configuration (must match BitChat apps exactly)
+#define BT_DEVICE_NAME "GhostDome"
+#define BT_APPEARANCE 0x0000
+
+// BitChat Service UUIDs - EXACT SAME AS ANDROID/iOS
+#define BITCHAT_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define BITCHAT_TX_CHAR_UUID "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define BITCHAT_RX_CHAR_UUID "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+// Connection Management (matching BitChat Android)
+#define BITCHAT_MAX_CONNECTIONS 4
+#define BITCHAT_AUTO_CONNECT_ENABLED true
+#define BITCHAT_CONNECTION_TIMEOUT_MS 10000
+
+// Power Mode Configurations (EXACT BitChat Android values)
+// Performance Mode (>60% battery or charging)
+#define BITCHAT_PERF_SCAN_INTERVAL_MS 50     // Matching BitChat exactly
+#define BITCHAT_PERF_SCAN_WINDOW_MS 30
+#define BITCHAT_PERF_ADV_MIN_INTERVAL_MS 100
+#define BITCHAT_PERF_ADV_MAX_INTERVAL_MS 150
+#define BITCHAT_PERF_MAX_CONNECTIONS 8
+
+// Balanced Mode (30-60% battery) - DEFAULT
+#define BITCHAT_BAL_SCAN_INTERVAL_MS 80      // Matching BitChat exactly
+#define BITCHAT_BAL_SCAN_WINDOW_MS 40
+#define BITCHAT_BAL_ADV_MIN_INTERVAL_MS 100
+#define BITCHAT_BAL_ADV_MAX_INTERVAL_MS 200
+#define BITCHAT_BAL_MAX_CONNECTIONS 4
+
+// Power Saver Mode (<30% battery)
+#define BITCHAT_SAVER_SCAN_INTERVAL_MS 160   // Matching BitChat exactly
+#define BITCHAT_SAVER_SCAN_WINDOW_MS 40
+#define BITCHAT_SAVER_ADV_MIN_INTERVAL_MS 300
+#define BITCHAT_SAVER_ADV_MAX_INTERVAL_MS 500
+#define BITCHAT_SAVER_MAX_CONNECTIONS 2
+
+// Ultra Low Power Mode (<10% battery)
+#define BITCHAT_ULP_SCAN_INTERVAL_MS 640     // Matching BitChat exactly
+#define BITCHAT_ULP_SCAN_WINDOW_MS 40
+#define BITCHAT_ULP_ADV_MIN_INTERVAL_MS 1000
+#define BITCHAT_ULP_ADV_MAX_INTERVAL_MS 2000
+#define BITCHAT_ULP_MAX_CONNECTIONS 1
+
+// ============================================================================
+// CRYPTOGRAPHY CONFIGURATION - Matching BitChat Android Exactly
+// ============================================================================
+
+// Noise Protocol (EXACT BitChat implementation)
+#define BITCHAT_NOISE_PROTOCOL_NAME "Noise_XX_25519_AESGCM_SHA256"
+#define BITCHAT_NOISE_SESSION_TIMEOUT_MS 86400000  // 24 hours
+#define BITCHAT_NOISE_HANDSHAKE_TIMEOUT_MS 30000   // 30 seconds
+#define BITCHAT_NOISE_REKEY_THRESHOLD 1000000      // 1M messages
+
+// X25519 Key Exchange (using rweather/Crypto)
+#define BITCHAT_X25519_KEY_SIZE 32
+#define BITCHAT_X25519_ENABLED true
+
+// Ed25519 Signatures (using rweather/Crypto)
+#define BITCHAT_SIGNATURES_ENABLED true
+#define BITCHAT_ED25519_PUBLIC_KEY_SIZE 32
+#define BITCHAT_ED25519_PRIVATE_KEY_SIZE 64
+#define BITCHAT_ED25519_SIGNATURE_SIZE 64
+
+// AES-256-GCM Transport Encryption (using rweather/Crypto)
+#define BITCHAT_AES_GCM_ENABLED true
+#define BITCHAT_AES_GCM_KEY_SIZE 32      // AES-256
+#define BITCHAT_AES_GCM_IV_SIZE 12       // 96-bit IV
+#define BITCHAT_AES_GCM_TAG_SIZE 16      // 128-bit authentication tag
+
+// Channel Encryption (Argon2id + AES-256-GCM) - BitChat Android values
+#define BITCHAT_CHANNEL_CRYPTO_ENABLED true
+#define BITCHAT_ARGON2_TIME_COST 3              // Matching BitChat
+#define BITCHAT_ARGON2_MEMORY_COST 65536        // 64MB (BitChat uses 65536)
+#define BITCHAT_ARGON2_PARALLELISM 1
+#define BITCHAT_ARGON2_HASH_LENGTH 32
+
+// LZ4 Compression (using proper LZ4 library)
+#define BITCHAT_LZ4_ENABLED true
+#define BITCHAT_LZ4_COMPRESSION_LEVEL 1         // Fast compression
+#define BITCHAT_LZ4_ACCELERATION 1
+
+// Key Storage
+#define BITCHAT_KEY_STORAGE_NAMESPACE "bitchat_id"
+#define BITCHAT_PERSISTENT_KEYS_ENABLED true
+
+// ============================================================================
+// LIBRARY INTEGRATION CONSTANTS
+// ============================================================================
+
+// rweather/Crypto Configuration
+#define CRYPTO_X25519_ENABLED true
+#define CRYPTO_ED25519_ENABLED true 
+#define CRYPTO_AES_GCM_ENABLED true
+#define CRYPTO_SHA256_ENABLED true
+
+// LZ4 Configuration
+#define LZ4_COMPRESSION_ENABLED true
+#define LZ4_ACCELERATION_DEFAULT 1
+
+// Argon2 Configuration  
+#define ARGON2_TYPE_ID 2                        // Argon2id
+#define ARGON2_SALT_LENGTH 16
+#define ARGON2_OUTPUT_LENGTH 32
+
+// ============================================================================
+// DEBUGGING AND LOGGING
+// ============================================================================
+
+// Debug Configuration
+#define BITCHAT_DEBUG_ENABLED true
+#define BITCHAT_VERBOSE_LOGGING false
+#define BITCHAT_PACKET_LOGGING false
+#define BITCHAT_PERFORMANCE_METRICS true
+#define BITCHAT_CRYPTO_DEBUG false              // Disable crypto debug for security
+
+// Debug Intervals
+#define BITCHAT_DEBUG_INTERVAL_MS 30000
+#define BITCHAT_STATUS_REPORT_INTERVAL_MS 60000
+
+// Log Levels per Component (matching BitChat Android)
+#define BITCHAT_MESH_LOG_LEVEL ESP_LOG_DEBUG
+#define BITCHAT_BLE_LOG_LEVEL ESP_LOG_DEBUG
+#define BITCHAT_CRYPTO_LOG_LEVEL ESP_LOG_INFO    // Reduced for security
+#define BITCHAT_PEER_LOG_LEVEL ESP_LOG_DEBUG
+#define BITCHAT_FRAGMENT_LOG_LEVEL ESP_LOG_DEBUG
+#define BITCHAT_COMPRESSION_LOG_LEVEL ESP_LOG_INFO
+
+// ============================================================================
+// INTEGRATION WITH EXISTING GHOSTDOME FEATURES
+// ============================================================================
+
+// GhostDome Blockchain Integration
+#define BITCHAT_BLOCKCHAIN_MESSAGES_ENABLED true
+#define BITCHAT_BLOCKCHAIN_MESSAGE_PREFIX "BLOCKCHAIN:"
+
+// GhostDome Identity Integration  
+#define BITCHAT_GHOSTDOME_IDENTITY_ENABLED true
+#define BITCHAT_GHOSTDOME_NICKNAME_PREFIX "GhostDome-"
+
+// GhostDome Transaction Support
+#define BITCHAT_TRANSACTION_MESSAGES_ENABLED true
+#define BITCHAT_TRANSACTION_MESSAGE_PREFIX "TRANSACTION:"
+
+// Emergency Features (matching BitChat)
+#define BITCHAT_EMERGENCY_WIPE_ENABLED true
+#define BITCHAT_PANIC_TRIPLE_TAP_ENABLED true
+
+// ============================================================================
+// HARDWARE SPECIFIC SETTINGS
+// ============================================================================
+
+// ESP32 Specific Optimizations
+#define BITCHAT_ESP32_OPTIMIZATIONS_ENABLED true
+#define BITCHAT_USE_HARDWARE_RNG true
+#define BITCHAT_USE_HARDWARE_SHA256 true
+#define BITCHAT_USE_MBEDTLS_FALLBACK true        // Fallback to mbedTLS if needed
+
+// Memory Configuration (optimized for ESP32)
+#define BITCHAT_STACK_SIZE_MESH_TASK 8192
+#define BITCHAT_STACK_SIZE_BLE_TASK 4096
+#define BITCHAT_STACK_SIZE_CRYPTO_TASK 6144      // Increased for crypto operations
+#define BITCHAT_STACK_SIZE_COMPRESSION_TASK 4096
+
+// FreeRTOS Task Priorities
+#define BITCHAT_MESH_TASK_PRIORITY 5
+#define BITCHAT_BLE_TASK_PRIORITY 6
+#define BITCHAT_CRYPTO_TASK_PRIORITY 4
+#define BITCHAT_COMPRESSION_TASK_PRIORITY 3
+
+// Memory Pool Sizes
+#define BITCHAT_MESSAGE_POOL_SIZE 50
+#define BITCHAT_FRAGMENT_POOL_SIZE 20
+#define BITCHAT_CRYPTO_BUFFER_SIZE 1024
+
+// ============================================================================
+// COMPATIBILITY SETTINGS
+// ============================================================================
+
+// BitChat Android/iOS Compatibility
+#define BITCHAT_ANDROID_COMPATIBLE true
+#define BITCHAT_IOS_COMPATIBLE true
+#define BITCHAT_STRICT_PROTOCOL_COMPLIANCE true
+
+// Version Compatibility
+#define BITCHAT_MIN_SUPPORTED_VERSION 1
+#define BITCHAT_MAX_SUPPORTED_VERSION 1
+
+// Binary Protocol Compatibility
+#define BITCHAT_BINARY_PROTOCOL_V1 true
+#define BITCHAT_TLV_ENCODING_ENABLED true
+#define BITCHAT_BIG_ENDIAN_INTEGERS true         // BitChat uses big-endian
+
+// Feature Flags for Future Compatibility
+#define BITCHAT_FUTURE_IPv6_SUPPORT false
+#define BITCHAT_FUTURE_FILE_TRANSFER false
+#define BITCHAT_FUTURE_AUDIO_STREAMING false
+#define BITCHAT_FUTURE_VIDEO_CALLING false
+
+// ============================================================================
+// PERFORMANCE TUNING
+// ============================================================================
+
+// Message Processing
+#define BITCHAT_MAX_MESSAGES_PER_TICK 10
+#define BITCHAT_MESSAGE_QUEUE_SIZE 100
+#define BITCHAT_CRYPTO_QUEUE_SIZE 20
+
+// BLE Performance
+#define BITCHAT_BLE_MTU_SIZE 512                 // Maximum MTU
+#define BITCHAT_BLE_PREFERRED_MTU 244            // Preferred MTU for reliability
+#define BITCHAT_BLE_MAX_RETRIES 3
+
+// Compression Performance
+#define BITCHAT_COMPRESSION_MIN_RATIO 0.9        // Only use if <90% of original size
+#define BITCHAT_MAX_COMPRESSION_TIME_MS 100      // Timeout compression after 100ms
+
+// ============================================================================
+// SECURITY SETTINGS
+// ============================================================================
+
+// Key Management Security
+#define BITCHAT_SECURE_KEY_STORAGE true
+#define BITCHAT_KEY_DERIVATION_ITERATIONS 100000 // For legacy key storage
+#define BITCHAT_RANDOM_SEED_ENTROPY_SOURCES 3
+
+// Session Security
+#define BITCHAT_FORWARD_SECRECY_ENABLED true
+#define BITCHAT_REPLAY_PROTECTION_ENABLED true
+#define BITCHAT_NONCE_WINDOW_SIZE 100
+
+// Network Security
+#define BITCHAT_ANTI_REPLAY_CACHE_SIZE 1000
+#define BITCHAT_MAX_HOPS_WITHOUT_SIGNATURE 3     // Limit unsigned message propagation
+
+// ============================================================================
+// VALIDATION MACROS
+// ============================================================================
+
+// Compile-time validation
+#if !defined(ENABLE_BITCHAT_MESH) && !defined(ENABLE_GHOSTDOME_BLE_MESH)
+#error "Must enable either BITCHAT or old GHOSTDOME BLE mesh"
+#endif
+
+#if defined(ENABLE_BITCHAT_MESH) && defined(ENABLE_GHOSTDOME_BLE_MESH)
+#warning "Both mesh implementations enabled - this may cause conflicts"
+#endif
+
+#if BITCHAT_MAX_PACKET_SIZE > 65535
+#error "BITCHAT_MAX_PACKET_SIZE cannot exceed 65535 bytes"
+#endif
+
+#if BITCHAT_MAX_PEERS > 255
+#error "BITCHAT_MAX_PEERS cannot exceed 255"
+#endif
+
+#if BITCHAT_MAX_TTL > 255
+#error "BITCHAT_MAX_TTL cannot exceed 255"
+#endif
+
+#if BITCHAT_COMPRESSION_THRESHOLD > 1024
+#warning "BITCHAT_COMPRESSION_THRESHOLD > 1024 may impact performance"
+#endif
+
+// Library validation
+#ifndef CRYPTO_X25519_ENABLED
+#error "rweather/Crypto library with X25519 support is required"
+#endif
+
+#ifndef LZ4_COMPRESSION_ENABLED
+#error "LZ4 compression library is required"
+#endif
+
+// ============================================================================
+// UTILITY MACROS
+// ============================================================================
+
+// Convert milliseconds to FreeRTOS ticks
+#define BITCHAT_MS_TO_TICKS(ms) (pdMS_TO_TICKS(ms))
+
+// Check if BitChat mesh is enabled
+#ifdef ENABLE_BITCHAT_MESH
+#define BITCHAT_ENABLED 1
+#else
+#define BITCHAT_ENABLED 0
+#endif
+
+// Feature availability macros
+#define BITCHAT_HAS_STORE_FORWARD (BITCHAT_ENABLED && BITCHAT_STORE_FORWARD_ENABLED)
+#define BITCHAT_HAS_FRAGMENTATION (BITCHAT_ENABLED && BITCHAT_FRAGMENTATION_ENABLED)
+#define BITCHAT_HAS_COMPRESSION (BITCHAT_ENABLED && BITCHAT_COMPRESSION_ENABLED && LZ4_COMPRESSION_ENABLED)
+#define BITCHAT_HAS_CHANNEL_CRYPTO (BITCHAT_ENABLED && BITCHAT_CHANNEL_CRYPTO_ENABLED)
+#define BITCHAT_HAS_NOISE_PROTOCOL (BITCHAT_ENABLED && CRYPTO_X25519_ENABLED)
+#define BITCHAT_HAS_SIGNATURES (BITCHAT_ENABLED && CRYPTO_ED25519_ENABLED)
+
+// Crypto feature checks
+#define BITCHAT_CRYPTO_READY (CRYPTO_X25519_ENABLED && CRYPTO_ED25519_ENABLED && CRYPTO_AES_GCM_ENABLED)
+
+// Memory allocation helpers
+#define BITCHAT_MALLOC(size) heap_caps_malloc(size, MALLOC_CAP_8BIT)
+#define BITCHAT_FREE(ptr) heap_caps_free(ptr)
