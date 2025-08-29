@@ -60,7 +60,7 @@ class AccelerometerThread : public concurrency::OSThread
     int32_t runOnce() override
     {
         // Assume we should not keep the board awake
-        canSleep = true;
+        sleepOnNextExecution = true;
 
         if (isInitialised)
             return sensor->runOnce();

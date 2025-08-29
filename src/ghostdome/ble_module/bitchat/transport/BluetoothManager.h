@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <NimBLEDevice.h>
+#include <NimBLEAdvertisedDevice.h>
 
 namespace bitchat {
 
@@ -56,6 +57,26 @@ public:
     void setAdvertisingParameters(uint16_t minInterval, uint16_t maxInterval);
     void setConnectionParameters(uint16_t minInterval, uint16_t maxInterval, 
                                uint16_t latency, uint16_t timeout);
+
+    void addConnectedDevice(const std::string& deviceAddress) {
+    std::lock_guard<std::mutex> lock(connectionsMutex);
+    connectedDevices.push_back(deviceAddress);
+    }
+
+    void removeConnectedDevice(const std::string& deviceAddress) {
+    std::lock_guard<std::mutex> lock(connectionsMutex);
+    auto it = std::find(connectedDevices.begin(), connectedDevices.end(), deviceAddress);
+    if (it != connectedDevices.end()) {
+        connectedDevices.erase(it);
+    }
+    }
+
+    void triggerConnectionCallback(const std::string& deviceAddress, bool connected) {
+        if (connectionCallback) {
+            connectionCallback(deviceAddress, connected);
+        }
+    }
+
     
     // Debug
     std::string getDebugInfo() const;
@@ -105,6 +126,7 @@ private:
     static void onConnect(NimBLEServer* server);
     static void onDisconnect(NimBLEServer* server);
     
+    public:
     // Service UUIDs (matching BitChat exactly)
     static const std::string BITCHAT_SERVICE_UUID;
     static const std::string BITCHAT_TX_CHAR_UUID;
@@ -112,6 +134,11 @@ private:
     
     // Connection limits
     static constexpr size_t MAX_CONNECTIONS = 4;
+
+private:
+
+public:
+    void processIncomingData(const std::vector<uint8_t>& data, const std::string& deviceAddress);
 };
 
 /**
@@ -121,8 +148,8 @@ class BitchatServerCallbacks : public NimBLEServerCallbacks {
 public:
     BitchatServerCallbacks(BluetoothManager* manager) : bluetoothManager(manager) {}
     
-    void onConnect(NimBLEServer* server) override;
-    void onDisconnect(NimBLEServer* server) override;
+    void onConnect(NimBLEServer* pServer, ble_gap_conn_desc* desc) override;
+    void onDisconnect(NimBLEServer* pServer) override; // Disconnect remains single-arg
     
 private:
     BluetoothManager* bluetoothManager;
@@ -146,13 +173,10 @@ private:
 /**
  * BLE Scan Callbacks for discovering devices
  */
-class BitchatScanCallbacks : public NimBLEScanCallbacks {
+class BitchatScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
 public:
     BitchatScanCallbacks(BluetoothManager* manager) : bluetoothManager(manager) {}
-    
     void onResult(NimBLEAdvertisedDevice* advertisedDevice) override;
-    void onScanEnd(NimBLEScanResults results) override;
-    
 private:
     BluetoothManager* bluetoothManager;
 };

@@ -4,6 +4,3 @@
 [submodule "meshtestic"]
 	path = meshtestic
 	url = https://github.com/meshtastic/meshTestic
-[submodule "components/bitchatz-cpp"]
-	path = components/bitchatz-cpp
-	url = https://github.com/bitchatz/bitchatz-cpp.git

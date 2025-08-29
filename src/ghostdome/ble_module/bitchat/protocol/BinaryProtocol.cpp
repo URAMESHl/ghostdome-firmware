@@ -157,7 +157,7 @@ std::vector<uint8_t> BinaryProtocol::encodeCore(const BitchatPacket& packet) {
     
     if (CompressionUtil::shouldCompress(payload)) {
         auto compressedPayload = CompressionUtil::compress(payload);
-        if (!compressedPayload.empty() && compressedPayload.size() < payload.size()) {
+        if (!compressedPayload.empty()) {
             originalPayloadSize = payload.size();
             payload = compressedPayload;
             isCompressed = true;

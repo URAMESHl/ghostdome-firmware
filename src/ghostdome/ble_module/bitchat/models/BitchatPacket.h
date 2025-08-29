@@ -9,6 +9,7 @@
 #include <esp_timer.h>
 #include <esp_random.h>
 #include <mbedtls/sha256.h>
+#include <memory>
 
 namespace bitchat {
 
@@ -73,34 +74,21 @@ struct BitchatPacket {
     bool hasSignature = false;
     bool isCompressed = false;
     
-    // Constructors
+    // Constructors (declarations only)
     BitchatPacket() = default;
     
     BitchatPacket(MessageType type, const std::array<uint8_t, 8>& senderID,
-                  const std::vector<uint8_t>& payload)
-        : type(type), senderID(senderID), payload(payload) {
-        timestamp = utils::getCurrentTimestamp();
-        recipientID = SpecialRecipients::BROADCAST;
-        hasRecipient = false;
-    }
+                  const std::vector<uint8_t>& payload);
     
     BitchatPacket(MessageType type, const std::array<uint8_t, 8>& senderID,
                   const std::array<uint8_t, 8>& recipientID,
-                  const std::vector<uint8_t>& payload)
-        : type(type), senderID(senderID), recipientID(recipientID), payload(payload) {
-        timestamp = utils::getCurrentTimestamp();
-        hasRecipient = (recipientID != SpecialRecipients::BROADCAST);
-    }
+                  const std::vector<uint8_t>& payload);
     
-    // Utility methods
-    std::string getSenderIDString() const {
-        return utils::toHexString(senderID);
-    }
+    // Utility methods (declarations only)
+    std::string getSenderIDString() const;
+    std::string getRecipientIDString() const;
     
-    std::string getRecipientIDString() const {
-        return utils::toHexString(recipientID);
-    }
-    
+    // Methods that don't use utils can stay inline
     bool isBroadcast() const {
         return recipientID == SpecialRecipients::BROADCAST;
     }
@@ -155,7 +143,7 @@ struct NoisePayload {
         NoisePayloadType type = static_cast<NoisePayloadType>(encoded[0]);
         std::vector<uint8_t> data(encoded.begin() + 1, encoded.end());
         
-        return std::make_unique<NoisePayload>(type, data);
+        return std::unique_ptr<NoisePayload>(new NoisePayload(type, data));
     }
 };
 
@@ -251,6 +239,31 @@ namespace utils {
     }
     
 } // namespace utils
+
+// Method implementations - INSIDE bitchat namespace, OUTSIDE utils namespace, AFTER utils definition
+inline BitchatPacket::BitchatPacket(MessageType type, const std::array<uint8_t, 8>& senderID,
+                                    const std::vector<uint8_t>& payload)
+    : type(type), senderID(senderID), payload(payload) {
+    timestamp = utils::getCurrentTimestamp();
+    recipientID = SpecialRecipients::BROADCAST;
+    hasRecipient = false;
+}
+
+inline BitchatPacket::BitchatPacket(MessageType type, const std::array<uint8_t, 8>& senderID,
+                                    const std::array<uint8_t, 8>& recipientID,
+                                    const std::vector<uint8_t>& payload)
+    : type(type), senderID(senderID), recipientID(recipientID), payload(payload) {
+    timestamp = utils::getCurrentTimestamp();
+    hasRecipient = (recipientID != SpecialRecipients::BROADCAST);
+}
+
+inline std::string BitchatPacket::getSenderIDString() const {
+    return utils::toHexString(senderID);
+}
+
+inline std::string BitchatPacket::getRecipientIDString() const {
+    return utils::toHexString(recipientID);
+}
 
 } // namespace bitchat
 

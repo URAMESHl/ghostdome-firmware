@@ -1,6 +1,7 @@
 #ifdef ENABLE_BITCHAT_MESH
 
 #include "MeshComponents.h"
+#include "ghostdome/ble_module/bitchat/protocol/BinaryProtocol.h"
 #include <esp_log.h>
 #include <algorithm>
 #include <sstream>
@@ -483,7 +484,7 @@ std::unique_ptr<BitchatPacket> FragmentManager::handleFragment(const BitchatPack
         }
         
         // Create original packet
-        auto originalPacket = std::make_unique<BitchatPacket>();
+        std::unique_ptr<BitchatPacket> originalPacket(new BitchatPacket());
         originalPacket->version = fragment.version;
         originalPacket->type = MessageType::MESSAGE; // Assume text message
         originalPacket->ttl = fragment.ttl;

@@ -1,13 +1,14 @@
 #ifdef ENABLE_BITCHAT_MESH
 
-#include "NoiseProtocol.h"
-#include "IdentityManager.h"
+#include "ghostdome/ble_module/bitchat/crypto/NoiseProtocol.h"
+#include "ghostdome/ble_module/bitchat/identity/IdentityManager.h"
 #include <esp_log.h>
 #include <esp_random.h>
 #include <esp_timer.h>
 #include <mbedtls/sha256.h>
 #include <algorithm>
 #include <cstring>
+#include <memory>
 
 static const char* TAG = "NoiseProtocol";
 
@@ -458,7 +459,7 @@ NoiseProtocol::NoiseSession* NoiseProtocol::getOrCreateSession(const std::string
         return it->second.get();
     }
     
-    auto session = std::make_unique<NoiseSession>();
+    std::unique_ptr<NoiseSession> session(new NoiseSession());
     session->reset();
     
     NoiseSession* sessionPtr = session.get();

@@ -1,28 +1,7 @@
-/*
-
-TTGO T-BEAM Tracker for The Things Network
-
-Copyright (C) 2018 by Xose Pérez <xose dot perez at gmail dot com>
-
-This code requires LMIC library by Matthijs Kooijman
-https://github.com/matthijskooijman/arduino-lmic
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-*/
-
+#ifndef CONFIGURATION_H
+#define CONFIGURATION_H
 #pragma once
+
 
 #include <Arduino.h>
 
@@ -463,6 +442,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define HAS_SCREEN 0
 #endif
 
+#undef MAX_THREADS // Undefine MAX_THREADS to prevent redefinition warnings
 #include "DebugConfiguration.h"
 #include "RF95Configuration.h"
 
@@ -472,7 +452,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // ============================================================================
 
 // Enable BitChat mesh with proper crypto libraries
-#define ENABLE_BITCHAT_MESH
 
 // Disable old mesh implementation (comment out if still needed for migration)
 // #define ENABLE_GHOSTDOME_BLE_MESH
@@ -642,7 +621,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // ============================================================================
 
 // Debug Configuration
+#ifndef BITCHAT_DEBUG_ENABLED
 #define BITCHAT_DEBUG_ENABLED true
+#endif
 #define BITCHAT_VERBOSE_LOGGING false
 #define BITCHAT_PACKET_LOGGING false
 #define BITCHAT_PERFORMANCE_METRICS true
@@ -771,14 +752,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // VALIDATION MACROS
 // ============================================================================
 
-// Compile-time validation
-#if !defined(ENABLE_BITCHAT_MESH) && !defined(ENABLE_GHOSTDOME_BLE_MESH)
-#error "Must enable either BITCHAT or old GHOSTDOME BLE mesh"
-#endif
-
-#if defined(ENABLE_BITCHAT_MESH) && defined(ENABLE_GHOSTDOME_BLE_MESH)
-#warning "Both mesh implementations enabled - this may cause conflicts"
-#endif
 
 #if BITCHAT_MAX_PACKET_SIZE > 65535
 #error "BITCHAT_MAX_PACKET_SIZE cannot exceed 65535 bytes"
@@ -833,3 +806,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 // Memory allocation helpers
 #define BITCHAT_MALLOC(size) heap_caps_malloc(size, MALLOC_CAP_8BIT)
 #define BITCHAT_FREE(ptr) heap_caps_free(ptr)
+#endif // CONFIGURATION_H

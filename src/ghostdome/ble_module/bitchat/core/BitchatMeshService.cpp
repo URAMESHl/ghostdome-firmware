@@ -12,6 +12,7 @@
 #include <esp_timer.h>
 #include <sstream>
 #include <algorithm>
+#include <memory>
 
 static const char* TAG = "BitchatMesh";
 
@@ -34,16 +35,16 @@ void BitchatMeshService::initializeComponents() {
     ESP_LOGI(TAG, "Initializing BitChat mesh components");
     
     // Initialize IdentityManager first (other components depend on it)
-    identityManager = std::make_unique<IdentityManager>();
+    identityManager.reset(new IdentityManager());
     
     // Create other components
-    protocol = std::make_unique<BinaryProtocol>();
-    peerManager = std::make_unique<PeerManager>();
-    messageRouter = std::make_unique<MessageRouter>();
-    noiseProtocol = std::make_unique<NoiseProtocol>(identityManager.get());
-    bluetoothManager = std::make_unique<BluetoothManager>();
-    fragmentManager = std::make_unique<FragmentManager>();
-    storeForward = std::make_unique<StoreForward>();
+    protocol.reset(new BinaryProtocol());
+    peerManager.reset(new PeerManager());
+    messageRouter.reset(new MessageRouter());
+    noiseProtocol.reset(new NoiseProtocol(identityManager.get()));
+    bluetoothManager.reset(new BluetoothManager());
+    fragmentManager.reset(new FragmentManager());
+    storeForward.reset(new StoreForward());
 }
 
 void BitchatMeshService::setupCallbacks() {
