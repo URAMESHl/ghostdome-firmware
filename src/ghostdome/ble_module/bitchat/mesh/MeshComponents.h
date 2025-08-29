@@ -22,6 +22,7 @@ struct PeerInfo {
     std::string nickname;
     uint64_t lastSeen;
     uint64_t firstSeen;
+    bool isActive;
     bool hasEncryptedSession;
     std::array<uint8_t, 32> noisePublicKey;
     std::array<uint8_t, 32> signingPublicKey;
@@ -30,10 +31,15 @@ struct PeerInfo {
     uint32_t packetsReceived;
     uint32_t packetsSent;
     
-    PeerInfo() = default;
+    PeerInfo() : lastSeen(0), firstSeen(0), isActive(false), hasEncryptedSession(false), 
+                 rssi(-70), packetsReceived(0), packetsSent(0) {
+        noisePublicKey.fill(0);
+        signingPublicKey.fill(0);
+    }
+    
     PeerInfo(const std::string& id, const std::string& name)
-        : peerID(id), nickname(name), hasEncryptedSession(false), rssi(-70),
-          packetsReceived(0), packetsSent(0) {
+        : peerID(id), nickname(name), isActive(true), hasEncryptedSession(false), 
+          rssi(-70), packetsReceived(0), packetsSent(0) {
         lastSeen = firstSeen = utils::getCurrentTimestamp();
         noisePublicKey.fill(0);
         signingPublicKey.fill(0);
@@ -110,10 +116,17 @@ private:
     struct MessageRecord {
         std::string messageHash;
         uint64_t timestamp;
+        uint8_t ttl;
+        std::string senderID;
+        bool processed;
         bool wasRelayed;
+
+        // Default constructor
+        MessageRecord() : timestamp(0), ttl(7), processed(false) {}
         
-        MessageRecord(const std::string& hash) 
-            : messageHash(hash), timestamp(utils::getCurrentTimestamp()), wasRelayed(false) {}
+        MessageRecord(const std::string& hash)
+            : messageHash(hash), timestamp(utils::getCurrentTimestamp()), 
+              ttl(7), processed(false) {}
     };
     
     std::unordered_map<std::string, MessageRecord> seenMessages;
@@ -153,20 +166,23 @@ private:
         std::string messageID;
         std::string senderID;
         uint16_t totalFragments;
-        uint64_t timestamp;
         std::unordered_map<uint16_t, std::vector<uint8_t>> fragments;
+        uint64_t firstReceived;
+        uint64_t lastReceived;
+
+        // Default constructor
+        FragmentSet() : totalFragments(0), firstReceived(0), lastReceived(0) {}
         
         FragmentSet(const std::string& msgID, const std::string& sender, uint16_t total)
-            : messageID(msgID), senderID(sender), totalFragments(total) {
-            timestamp = utils::getCurrentTimestamp();
-        }
+            : messageID(msgID), senderID(sender), totalFragments(total),
+              firstReceived(utils::getCurrentTimestamp()), lastReceived(firstReceived) {}
         
         bool isComplete() const {
             return fragments.size() == totalFragments;
         }
         
         bool isExpired(uint64_t timeoutMs = 30000) const {
-            return (utils::getCurrentTimestamp() - timestamp) > timeoutMs;
+            return (utils::getCurrentTimestamp() - firstReceived) > timeoutMs;
         }
         
         std::vector<uint8_t> reassemble() const;
@@ -210,6 +226,8 @@ private:
         BitchatPacket packet;
         uint64_t timestamp;
         uint32_t deliveryAttempts;
+        
+        CachedMessage() : timestamp(0), deliveryAttempts(0) {}
         
         CachedMessage(const BitchatPacket& pkt) 
             : packet(pkt), timestamp(utils::getCurrentTimestamp()), deliveryAttempts(0) {}

@@ -117,7 +117,7 @@ bool ButtonThread::initButton(const ButtonConfig &config)
 int32_t ButtonThread::runOnce()
 {
     // If the button is pressed we suppress CPU sleep until release
-    canSleep = true; // Assume we should not keep the board awake
+    sleepOnNextExecution = true; // Assume we should not keep the board awake
 
     // Check for combination timeout
     if (waitingForLongPress && (millis() - shortPressTime) > BUTTON_COMBO_TIMEOUT_MS) {
@@ -125,7 +125,7 @@ int32_t ButtonThread::runOnce()
     }
 
     userButton.tick();
-    canSleep &= userButton.isIdle();
+    sleepOnNextExecution &= userButton.isIdle();
 
     // Check if we should play lead-up sound during long press
     // Play lead-up when button has been held for BUTTON_LEADUP_MS but before long press triggers

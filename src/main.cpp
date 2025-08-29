@@ -125,6 +125,13 @@ ButtonThread *CancelButtonThread = nullptr;
 #include "AmbientLightingThread.h"
 #include "PowerFSMThread.h"
 
+// BitChat Mesh Implementation
+#ifdef ENABLE_BITCHAT_MESH
+#include "ghostdome/ble_module/bitchat/BitchatManager.h"
+bitchat::BitchatManager *bitchatManager = nullptr;
+#endif
+
+
 #if !defined(ARCH_STM32WL) && !MESHTASTIC_EXCLUDE_I2C
 #include "motion/AccelerometerThread.h"
 AccelerometerThread *accelerometerThread = nullptr;
@@ -955,6 +962,21 @@ void setup()
     service = new MeshService();
     service->init();
 
+#ifdef ENABLE_BITCHAT_MESH
+    // Initialize BitChat Mesh
+    LOG_INFO("Initializing BitChat Mesh");
+    bitchatManager = new bitchat::BitchatManager();
+    if (bitchatManager->initialize()) {
+        LOG_INFO("BitChat Mesh initialized successfully");
+        // Start BitChat mesh networking
+        bitchatManager->start();
+    } else {
+        LOG_ERROR("Failed to initialize BitChat Mesh");
+        delete bitchatManager;
+        bitchatManager = nullptr;
+    }
+#endif
+
     // Now that the mesh service is created, create any modules
     setupModules();
 
@@ -1603,6 +1625,15 @@ void loop()
 #endif
 
     service->loop();
+
+#ifdef ENABLE_BITCHAT_MESH
+    // Update BitChat mesh
+    if (bitchatManager) {
+        bitchatManager->update();
+    }
+#endif
+
+
 #if defined(LGFX_SDL)
     if (screen) {
         auto dispdev = screen->getDisplayDevice();

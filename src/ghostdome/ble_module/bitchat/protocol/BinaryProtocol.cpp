@@ -4,15 +4,38 @@
 #include "ghostdome/ble_module/bitchat/models/BitchatPacket.h"
 #include <esp_log.h>
 #include <esp_random.h>
-#include <esp_lz4.h>  // Proper LZ4 compression library
 #include <algorithm>
 #include <cstring>
+#include <esp_system.h>
 
 static const char* TAG = "BinaryProtocol";
 
 namespace bitchat {
 
-// BinaryProtocol Implementation with proper LZ4 compression
+     int LZ4_compressBound(int inputSize) {
+        // Stub: return input size (no compression)
+        return inputSize;
+    }
+    
+    int LZ4_compress_default(const char* src, char* dst, int srcSize, int dstCapacity) {
+        // Stub: just copy data unchanged
+        if (dstCapacity >= srcSize) {
+            memcpy(dst, src, srcSize);
+            return srcSize;
+        }
+        return 0; // Failed
+    }
+    
+    int LZ4_decompress_safe(const char* src, char* dst, int compressedSize, int dstCapacity) {
+        // Stub: just copy data unchanged
+        if (dstCapacity >= compressedSize) {
+            memcpy(dst, src, compressedSize);
+            return compressedSize;
+        }
+        return -1; // Failed
+    }
+
+// BinaryProtocol Implementation with NOT proper LZ4 compression
 std::vector<uint8_t> BinaryProtocol::encode(const BitchatPacket& packet) {
     try {
         std::vector<uint8_t> result = encodeCore(packet);
@@ -321,7 +344,7 @@ std::unique_ptr<BitchatPacket> BinaryProtocol::decodeCore(const std::vector<uint
     }
     
     // Create packet
-    auto packet = std::make_unique<BitchatPacket>();
+    auto packet = std::unique_ptr<BitchatPacket>(new BitchatPacket());
     packet->version = version;
     packet->type = type;
     packet->ttl = ttl;
