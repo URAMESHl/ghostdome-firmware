@@ -49,6 +49,7 @@ PCA9557 io(0x18, &Wire);
 #endif
 #if !MESHTASTIC_EXCLUDE_BLUETOOTH
 #include "nimble/NimbleBluetooth.h"
+
 NimbleBluetooth *nimbleBluetooth = nullptr;
 #endif
 #endif
@@ -962,19 +963,17 @@ void setup()
     service = new MeshService();
     service->init();
 
-#ifdef ENABLE_BITCHAT_MESH
-    // Initialize BitChat Mesh
-    LOG_INFO("Initializing BitChat Mesh");
-    bitchatManager = new bitchat::BitchatManager();
-    if (bitchatManager->initialize()) {
-        LOG_INFO("BitChat Mesh initialized successfully");
-        // Start BitChat mesh networking
-        bitchatManager->start();
-    } else {
-        LOG_ERROR("Failed to initialize BitChat Mesh");
-        delete bitchatManager;
-        bitchatManager = nullptr;
-    }
+  #ifdef ENABLE_BITCHAT_MESH
+  LOG_INFO("Initializing BitChat Mesh");
+  bitchatManager = new bitchat::BitchatManager();
+  if (!bitchatManager->initialize()) {
+    LOG_ERROR("Failed to initialize BitChat Mesh");
+    delete bitchatManager;
+    bitchatManager = nullptr;
+  } else {
+    LOG_INFO("BitChat Mesh initialized successfully");
+    bitchatManager->start();    // this will bring up NimBLE and begin advertising
+  }
 #endif
 
     // Now that the mesh service is created, create any modules
@@ -1625,13 +1624,6 @@ void loop()
 #endif
 
     service->loop();
-
-#ifdef ENABLE_BITCHAT_MESH
-    // Update BitChat mesh
-    if (bitchatManager) {
-        bitchatManager->update();
-    }
-#endif
 
 
 #if defined(LGFX_SDL)
