@@ -10,12 +10,30 @@
 #include <mbedtls/ctr_drbg.h>
 #include <cstring>
 #include <sstream>
+#include "ghostdome/ble_module/bitchat/models/BitchatPacket.h"
 
 
 
 static const char* TAG = "IdentityManager";
 
 namespace bitchat {
+
+void IdentityManager::asyncSaveToStorage() {
+  // Spawn a low-priority task to do the commit
+  xTaskCreate(
+    [](void* param) {
+      IdentityManager* self = static_cast<IdentityManager*>(param);
+      esp_err_t err = nvs_commit(self->nvsHandle);
+      printf("TRACE: asyncSaveToStorage() nvs_commit returned %d\n", err);
+      vTaskDelete(NULL);
+    },
+    "NVSCommit",
+    2048,           // Stack size
+    this,          // Parameter
+    tskIDLE_PRIORITY + 1,
+    nullptr
+  );
+}
 
 IdentityManager::IdentityManager() 
     : initialized(false), noiseKeysGenerated(false), signingKeysGenerated(false), nvsHandle(0) {
@@ -92,7 +110,7 @@ bool IdentityManager::initialize() {
         myPeerID = utils::toHexString(utils::generateRandomPeerID());
         ESP_LOGD(TAG, "Generated Peer ID: %s. Heap: %u, Stack HWM: %u", myPeerID.c_str(), esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
         printf("Generated Peer ID: %s\n", myPeerID.c_str());
-        saveToStorage(); // Save the new peer ID
+        asyncSaveToStorage(); // Save the new peer ID
         ESP_LOGD(TAG, "New Peer ID saved to storage. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
         printf("New Peer ID saved to storage.\n");
     }
@@ -103,10 +121,10 @@ bool IdentityManager::initialize() {
     printf("Step 9: IdentityManager initialization complete\n");
     ESP_LOGI(TAG, "Peer ID: %s", myPeerID.c_str());
     printf("Peer ID: %s\n", myPeerID.c_str());
-    ESP_LOGI(TAG, "Noise Fingerprint: %s", getNoiseFingerprint().substr(0, 16).c_str());
-    printf("Noise Fingerprint: %s\n", getNoiseFingerprint().substr(0, 16).c_str());
-    ESP_LOGI(TAG, "Signing Fingerprint: %s", getSigningFingerprint().substr(0, 16).c_str());
-    printf("Signing Fingerprint: %s\n", getSigningFingerprint().substr(0, 16).c_str());
+    ESP_LOGI(TAG, "Noise Fingerprint: %s", getNoiseFingerprint_unlocked().substr(0, 16).c_str());
+    printf("Noise Fingerprint: %s\n", getNoiseFingerprint_unlocked().substr(0, 16).c_str());
+    ESP_LOGI(TAG, "Signing Fingerprint: %s", getSigningFingerprint_unlocked().substr(0, 16).c_str());
+    printf("Signing Fingerprint: %s\n", getSigningFingerprint_unlocked().substr(0, 16).c_str());
     ESP_LOGD(TAG, "IdentityManager::initialize() - Exit. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     printf("IdentityManager::initialize() - Exit. Heap: %u, Stack HWM: %u\n", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     return true;
@@ -171,8 +189,7 @@ std::array<uint8_t, 32> IdentityManager::getNoisePublicKey() const {
     return noisePublicKey;
 }
 
-std::string IdentityManager::getNoiseFingerprint() const {
-    std::lock_guard<std::mutex> lock(keysMutex);
+std::string IdentityManager::getNoiseFingerprint_unlocked() const {
     printf("Accessing Noise fingerprint\n");
     if (!noiseKeysGenerated) {
         return "";
@@ -182,7 +199,11 @@ std::string IdentityManager::getNoiseFingerprint() const {
     std::vector<uint8_t> pubKeyVec(noisePublicKey.begin(), noisePublicKey.end());
     auto hash = utils::sha256(pubKeyVec);
     return utils::toHexString(hash);
+}
 
+std::string IdentityManager::getNoiseFingerprint() const {
+    std::lock_guard<std::mutex> lock(keysMutex);
+    return getNoiseFingerprint_unlocked();
 }
 
 bool IdentityManager::generateSigningKeys() {
@@ -213,8 +234,7 @@ std::array<uint8_t, 32> IdentityManager::getSigningPublicKey() const {
     return signingPublicKey;
 }
 
-std::string IdentityManager::getSigningFingerprint() const {
-    std::lock_guard<std::mutex> lock(keysMutex);
+std::string IdentityManager::getSigningFingerprint_unlocked() const {
     printf("Accessing Ed25519 signing fingerprint\n");
     if (!signingKeysGenerated) {
         return "";
@@ -224,6 +244,11 @@ std::string IdentityManager::getSigningFingerprint() const {
     std::vector<uint8_t> pubKeyVec(signingPublicKey.begin(), signingPublicKey.end());
     auto hash = utils::sha256(pubKeyVec);
     return utils::toHexString(hash);
+}
+
+std::string IdentityManager::getSigningFingerprint() const {
+    std::lock_guard<std::mutex> lock(keysMutex);
+    return getSigningFingerprint_unlocked();
 }
 
 std::string IdentityManager::getIdentityFingerprint() const {
@@ -491,81 +516,58 @@ void IdentityManager::emergencyWipe() {
 
 bool IdentityManager::saveToStorage() {
     if (nvsHandle == 0) {
+        printf("TRACE: saveToStorage(): nvsHandle is 0, cannot save\n");
         return false;
     }
-    
     esp_err_t err;
-    
-    // Save Noise keys
+
+    // Save Noise private key
     if (noiseKeysGenerated) {
+        printf("TRACE: saveToStorage(): about to nvs_set_blob(NOISE_PRIVATE_KEY)\n");
         err = nvs_set_blob(nvsHandle, NOISE_PRIVATE_KEY, noisePrivateKey.data(), 32);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save Noise private key: %s", esp_err_to_name(err));
-            return false;
-        }
-        
+        printf("TRACE: nvs_set_blob(NOISE_PRIVATE_KEY) returned %d\n", err);
+        if (err != ESP_OK) return false;
+
+        printf("TRACE: saveToStorage(): about to nvs_set_blob(NOISE_PUBLIC_KEY)\n");
         err = nvs_set_blob(nvsHandle, NOISE_PUBLIC_KEY, noisePublicKey.data(), 32);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save Noise public key: %s", esp_err_to_name(err));
-            return false;
-        }
+        printf("TRACE: nvs_set_blob(NOISE_PUBLIC_KEY) returned %d\n", err);
+        if (err != ESP_OK) return false;
     }
-    
+
     // Save signing keys
     if (signingKeysGenerated) {
+        printf("TRACE: saveToStorage(): about to nvs_set_blob(SIGNING_PRIVATE_KEY)\n");
         err = nvs_set_blob(nvsHandle, SIGNING_PRIVATE_KEY, signingPrivateKey.data(), 64);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save signing private key: %s", esp_err_to_name(err));
-            return false;
-        }
-        
+        printf("TRACE: nvs_set_blob(SIGNING_PRIVATE_KEY) returned %d\n", err);
+        if (err != ESP_OK) return false;
+
+        printf("TRACE: saveToStorage(): about to nvs_set_blob(SIGNING_PUBLIC_KEY)\n");
         err = nvs_set_blob(nvsHandle, SIGNING_PUBLIC_KEY, signingPublicKey.data(), 32);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save signing public key: %s", esp_err_to_name(err));
-            return false;
-        }
+        printf("TRACE: nvs_set_blob(SIGNING_PUBLIC_KEY) returned %d\n", err);
+        if (err != ESP_OK) return false;
     }
-    
+
     // Save peer ID
     if (!myPeerID.empty()) {
+        printf("TRACE: saveToStorage(): about to nvs_set_str(PEER_ID_KEY)\n");
         err = nvs_set_str(nvsHandle, PEER_ID_KEY, myPeerID.c_str());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save peer ID: %s", esp_err_to_name(err));
-            return false;
-        }
+        printf("TRACE: nvs_set_str(PEER_ID_KEY) returned %d\n", err);
+        if (err != ESP_OK) return false;
     }
-    
-    // Save channel keys (simplified - in production, encrypt this data)
-    if (!channelKeys.empty()) {
-        // Serialize channel keys to JSON-like format for storage
-        std::string serialized;
-        for (const auto& [channelName, channelKey] : channelKeys) {
-            serialized += channelName + ":";
-            serialized += utils::toHexString(channelKey.key);
-            serialized += ":";
-            serialized += utils::toHexString(channelKey.salt);
-            serialized += ":";
-            serialized += std::to_string(channelKey.iterations);
-            serialized += ";";
-        }
-        
-        err = nvs_set_str(nvsHandle, CHANNEL_KEYS_KEY, serialized.c_str());
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to save channel keys: %s", esp_err_to_name(err));
-            return false;
-        }
-    }
-    
+
     // Commit changes
+    printf("TRACE: saveToStorage(): about to nvs_commit()\n");
     err = nvs_commit(nvsHandle);
+    printf("TRACE: nvs_commit() returned %d\n", err);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to commit NVS changes: %s", esp_err_to_name(err));
+        printf("TRACE: saveToStorage(): nvs_commit failed, aborting\n");
         return false;
     }
-    
-    ESP_LOGV(TAG, "Keys saved to persistent storage");
+
+    printf("TRACE: saveToStorage(): completed successfully\n");
     return true;
 }
+
 
 bool IdentityManager::loadFromStorage() {
     if (nvsHandle == 0) {
@@ -664,11 +666,11 @@ std::string IdentityManager::getDebugInfo() const {
     ss << "Signing Keys: " << (signingKeysGenerated ? "GENERATED" : "NOT_GENERATED") << "\n";
     
     if (noiseKeysGenerated) {
-        ss << "Noise Fingerprint: " << getNoiseFingerprint().substr(0, 16) << "...\n";
+        ss << "Noise Fingerprint: " << getNoiseFingerprint_unlocked().substr(0, 16) << "...\n";
     }
     
     if (signingKeysGenerated) {
-        ss << "Signing Fingerprint: " << getSigningFingerprint().substr(0, 16) << "...\n";
+        ss << "Signing Fingerprint: " << getSigningFingerprint_unlocked().substr(0, 16) << "...\n";
     }
     
     ss << "Channel Passwords: " << channelKeys.size() << "\n";

@@ -95,8 +95,6 @@ bool BitchatMeshService::startMesh(const std::string& deviceName) {
     // Step 2: Set nickname
     ESP_LOGI(TAG, "Step 2: Setting nickname");
     printf("Step 2: Setting nickname\n");
-
-    // Set default nickname from identity
     if (currentNickname.empty()) {
         currentNickname = "GhostDome-" + identityManager->getPeerID().substr(0, 6);
     }
@@ -166,6 +164,7 @@ bool BitchatMeshService::startMesh(const std::string& deviceName) {
     ESP_LOGI(TAG, "Step 6: MeshMaintenance task created");
     ESP_LOGI(TAG, "✅ BitChat mesh service started successfully");
     printf("BitChat mesh service started successfully\n");
+    
     return true;
 }
 

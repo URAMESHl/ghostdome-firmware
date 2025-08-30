@@ -43,6 +43,8 @@ public:
     using DeliveryCallback = std::function<void(const std::string& messageID, const std::string& toPeerID, bool delivered)>;
     using ChannelMessageCallback = std::function<void(const std::string& message, const std::string& fromPeerID, const std::string& channelName)>;
 
+  
+
     /**
      * Constructor
      */

@@ -122,26 +122,12 @@ bool BluetoothManager::startServices() {
   ESP_LOGI(TAG, "startServices(): entry");
   printf("TRACE: startServices() entry\n");
 
+ // Start only our GATT service on Meshtastic’s existing server
   bitchatService->start();
-  printf("TRACE: service started\n");
-
-  printf("TRACE: About to startAdvertising()\n");
-  if (!startAdvertising()) {
-    ESP_LOGE(TAG, "startServices(): startAdvertising() failed");
-    return false;
-  }
-  printf("TRACE: startAdvertising() succeeded\n");
-
-  printf("TRACE: About to startScanning()\n");
-  if (!startScanning()) {
-    ESP_LOGE(TAG, "startServices(): startScanning() failed");
-    return false;
-  }
-  printf("TRACE: startScanning() succeeded\n");
-
   isActive = true;
-  ESP_LOGI(TAG, "startServices(): exit success");
+  ESP_LOGI(TAG, "startServices(): BitChat GATT service started on existing NimBLE server");
   return true;
+
 }
 
 bool BluetoothManager::startAdvertising() {
@@ -170,11 +156,14 @@ bool BluetoothManager::startScanning() {
     ESP_LOGE(TAG, "startScanning(): getScan() failed");
     return false;
   }
+  
   scanner->setAdvertisedDeviceCallbacks(new BitchatScanCallbacks(this));
   scanner->setActiveScan(true);
   scanner->setInterval(scanInterval);
   scanner->setWindow(scanWindow);
-  scanner->start(0, false);
+  // Start a continuous, non-blocking scan.
+  // The third parameter `true` is for continuous scanning after a result is found.
+  scanner->start(0, nullptr, true);
   ESP_LOGI(TAG, "startScanning(): success");
   return true;
 }

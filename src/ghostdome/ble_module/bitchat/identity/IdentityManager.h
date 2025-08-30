@@ -46,7 +46,7 @@ public:
             salt.fill(0);
         }
     };
-
+    void asyncSaveToStorage();
     IdentityManager();
     ~IdentityManager();
 
@@ -102,6 +102,10 @@ public:
     std::string getDebugInfo() const;
 
 private:
+    // Internal unlocked methods
+    std::string getNoiseFingerprint_unlocked() const;
+    std::string getSigningFingerprint_unlocked() const;
+
     // State
     mutable std::mutex keysMutex;
     bool initialized;
