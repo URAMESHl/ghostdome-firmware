@@ -25,7 +25,8 @@ bool BitchatManager::initialize() {
     ESP_LOGI(TAG, "Initializing BitChat...");
     
     // Create the mesh service
-    meshService = std::unique_ptr<BitchatMeshService>();
+    meshService = std::unique_ptr<BitchatMeshService>(new BitchatMeshService());
+
     if (!meshService) {
         ESP_LOGE(TAG, "Failed to create BitchatMeshService");
         return false;

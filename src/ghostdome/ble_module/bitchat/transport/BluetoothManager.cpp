@@ -2,226 +2,207 @@
 
 #include "ghostdome/ble_module/bitchat/transport/BluetoothManager.h"
 #include "ghostdome/ble_module/bitchat/protocol/BinaryProtocol.h"
+
 #include <esp_log.h>
+#include <esp_task_wdt.h>
 #include <NimBLEDevice.h>
 #include <NimBLEServer.h>
 #include <NimBLEAdvertisedDevice.h>
 #include <sstream>
-
+static bool bleStackInitialized = false;
 static const char* TAG = "BluetoothManager";
 
 namespace bitchat {
 
-// BitChat Service UUIDs (EXACT same as Android/iOS BitChat)
+// BitChat Service UUIDs (same as Android/iOS)
 const std::string BluetoothManager::BITCHAT_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
 const std::string BluetoothManager::BITCHAT_TX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
 const std::string BluetoothManager::BITCHAT_RX_CHAR_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
-BluetoothManager::BluetoothManager() 
-    : bleServer(nullptr), bitchatService(nullptr), txCharacteristic(nullptr),
-      rxCharacteristic(nullptr), advertising(nullptr), scanner(nullptr),
-      isActive(false), scanInterval(80), scanWindow(40), 
-      advMinInterval(100), advMaxInterval(200), 
-      connMinInterval(24), connMaxInterval(40), connLatency(0), connTimeout(400),
-      packetsSent(0), packetsReceived(0) {
-    ESP_LOGI(TAG, "BluetoothManager created");
+BluetoothManager::BluetoothManager()
+  : bleServer(nullptr)
+  , bitchatService(nullptr)
+  , txCharacteristic(nullptr)
+  , rxCharacteristic(nullptr)
+  , advertising(nullptr)
+  , scanner(nullptr)
+  , isActive(false)
+  , scanInterval(80)
+  , scanWindow(40)
+  , advMinInterval(100)
+  , advMaxInterval(200)
+  , connMinInterval(24)
+  , connMaxInterval(40)
+  , connLatency(0)
+  , connTimeout(400)
+  , packetsSent(0)
+  , packetsReceived(0) {
+  ESP_LOGI(TAG, "BluetoothManager created");
 }
 
 BluetoothManager::~BluetoothManager() {
-    stopServices();
+  stopServices();
 }
 
 bool BluetoothManager::initialize(const std::string& deviceName) {
     if (isActive) {
-        ESP_LOGW(TAG, "BluetoothManager already initialized");
+        ESP_LOGW(TAG, "initialize(): already initialized");
         return true;
     }
-    
     this->deviceName = deviceName;
-    
-    ESP_LOGI(TAG, "Initializing BitChat BLE with device name: %s", deviceName.c_str());
-    
-    // Initialize NimBLE
-    NimBLEDevice::init(deviceName);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // Maximum power
-    
 
-    
-    return setupBLEServer() && setupBLEService();
-}
+    ESP_LOGI(TAG, "initialize(): entry, deviceName=%s", deviceName.c_str());
+    printf("TRACE: initialize() entry\n");
 
-bool BluetoothManager::setupBLEServer() {
-    // Create BLE Server
-    bleServer = NimBLEDevice::createServer();
-    if (!bleServer) {
-        ESP_LOGE(TAG, "Failed to create BLE server");
+    // Only initialize NimBLE once
+    if (!bleStackInitialized) {
+        ESP_LOGI(TAG, "initialize(): calling NimBLEDevice::init()");
+        printf("TRACE: About to call NimBLEDevice::init()\n");
+        NimBLEDevice::init(deviceName);
+        printf("TRACE: NimBLEDevice::init() done\n");
+        bleStackInitialized = true;
+    } else {
+        ESP_LOGI(TAG, "initialize(): NimBLEDevice already initialized, skipping");
+        printf("TRACE: skipping NimBLEDevice::init()\n");
+    }
+
+    printf("TRACE: About to call setupBLEServer()\n");
+    if (!setupBLEServer()) {
+        ESP_LOGE(TAG, "initialize(): setupBLEServer() failed");
         return false;
     }
-    
-    // Set server callbacks
-    bleServer->setCallbacks(new BitchatServerCallbacks(this));
-    
-    ESP_LOGD(TAG, "BLE server created successfully");
+    printf("TRACE: setupBLEServer() succeeded\n");
+
+    printf("TRACE: About to call setupBLEService()\n");
+    if (!setupBLEService()) {
+        ESP_LOGE(TAG, "initialize(): setupBLEService() failed");
+        return false;
+    }
+    printf("TRACE: setupBLEService() succeeded\n");
+
+    ESP_LOGI(TAG, "initialize(): exit success");
     return true;
+}
+
+
+bool BluetoothManager::setupBLEServer() {
+  bleServer = NimBLEDevice::createServer();
+  if (!bleServer) {
+    ESP_LOGE(TAG, "setupBLEServer(): createServer() failed");
+    return false;
+  }
+  bleServer->setCallbacks(new BitchatServerCallbacks(this));
+  ESP_LOGI(TAG, "setupBLEServer(): server created");
+  printf("TRACE: BLE server created\n");
+  return true;
 }
 
 bool BluetoothManager::setupBLEService() {
-    // Create BitChat service with exact UUID
-    bitchatService = bleServer->createService(BITCHAT_SERVICE_UUID);
-    if (!bitchatService) {
-        ESP_LOGE(TAG, "Failed to create BitChat service");
-        return false;
-    }
-    
-    // Create TX characteristic (ESP32 -> phone)
-    txCharacteristic = bitchatService->createCharacteristic(
-        BITCHAT_TX_CHAR_UUID,
-        NIMBLE_PROPERTY::NOTIFY
-    );
-    
-    // Create RX characteristic (phone -> ESP32)
-    rxCharacteristic = bitchatService->createCharacteristic(
-        BITCHAT_RX_CHAR_UUID,
-        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
-    );
-    
-    if (!txCharacteristic || !rxCharacteristic) {
-        ESP_LOGE(TAG, "Failed to create BitChat characteristics");
-        return false;
-    }
-    
-    // Set characteristic callbacks
-    rxCharacteristic->setCallbacks(new BitchatCharacteristicCallbacks(this));
-    
-    ESP_LOGI(TAG, "BitChat service created with UUIDs:");
-    ESP_LOGI(TAG, "  Service: %s", BITCHAT_SERVICE_UUID.c_str());
-    ESP_LOGI(TAG, "  TX Char: %s", BITCHAT_TX_CHAR_UUID.c_str());
-    ESP_LOGI(TAG, "  RX Char: %s", BITCHAT_RX_CHAR_UUID.c_str());
-    
-    return true;
+  bitchatService = bleServer->createService(BITCHAT_SERVICE_UUID);
+  if (!bitchatService) {
+    ESP_LOGE(TAG, "setupBLEService(): createService() failed");
+    return false;
+  }
+  txCharacteristic = bitchatService->createCharacteristic(
+    BITCHAT_TX_CHAR_UUID, NIMBLE_PROPERTY::NOTIFY);
+  rxCharacteristic = bitchatService->createCharacteristic(
+    BITCHAT_RX_CHAR_UUID,
+    NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  if (!txCharacteristic || !rxCharacteristic) {
+    ESP_LOGE(TAG, "setupBLEService(): createCharacteristic() failed");
+    return false;
+  }
+  rxCharacteristic->setCallbacks(new BitchatCharacteristicCallbacks(this));
+  ESP_LOGI(TAG, "setupBLEService(): service and characteristics created");
+  printf("TRACE: BLE service created\n");
+  return true;
 }
 
 bool BluetoothManager::startServices() {
-    if (isActive) {
-        ESP_LOGW(TAG, "Services already started");
-        return true;
-    }
-    
-    if (!bitchatService) {
-        ESP_LOGE(TAG, "Service not initialized");
-        return false;
-    }
-    
-    // Start the service
-    bitchatService->start();
-    
-    // Start advertising
-    if (!startAdvertising()) {
-        ESP_LOGE(TAG, "Failed to start advertising");
-        return false;
-    }
-    
-    // Start scanning  
-    if (!startScanning()) {
-        ESP_LOGE(TAG, "Failed to start scanning");
-        return false;
-    }
-    
-    isActive = true;
-    ESP_LOGI(TAG, "BitChat BLE services started successfully");
-    return true;
+  ESP_LOGI(TAG, "startServices(): entry");
+  printf("TRACE: startServices() entry\n");
+
+  bitchatService->start();
+  printf("TRACE: service started\n");
+
+  printf("TRACE: About to startAdvertising()\n");
+  if (!startAdvertising()) {
+    ESP_LOGE(TAG, "startServices(): startAdvertising() failed");
+    return false;
+  }
+  printf("TRACE: startAdvertising() succeeded\n");
+
+  printf("TRACE: About to startScanning()\n");
+  if (!startScanning()) {
+    ESP_LOGE(TAG, "startServices(): startScanning() failed");
+    return false;
+  }
+  printf("TRACE: startScanning() succeeded\n");
+
+  isActive = true;
+  ESP_LOGI(TAG, "startServices(): exit success");
+  return true;
 }
 
 bool BluetoothManager::startAdvertising() {
-    advertising = NimBLEDevice::getAdvertising();
-    if (!advertising) {
-        ESP_LOGE(TAG, "Failed to get advertising object");
-        return false;
-    }
-    
-    // Configure advertising
-    advertising->addServiceUUID(BITCHAT_SERVICE_UUID);
-    advertising->setScanResponse(true);
-    advertising->setMinPreferred(0x06);  // Functions that help with iPhone connections issue
-    advertising->setMaxPreferred(0x12);
-    
-    // Set advertising intervals (matching BitChat Android settings)
-    advertising->setMinInterval(advMinInterval);
-    advertising->setMaxInterval(advMaxInterval);
-    
-    // Start advertising
-    if (!advertising->start()) {
-        ESP_LOGE(TAG, "Failed to start advertising");
-        return false;
-    }
-    
-    ESP_LOGI(TAG, "Started advertising BitChat service");
-    return true;
+  advertising = NimBLEDevice::getAdvertising();
+  if (!advertising) {
+    ESP_LOGE(TAG, "startAdvertising(): getAdvertising() failed");
+    return false;
+  }
+  advertising->addServiceUUID(BITCHAT_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMaxPreferred(0x12);
+  advertising->setMinInterval(advMinInterval);
+  advertising->setMaxInterval(advMaxInterval);
+  if (!advertising->start()) {
+    ESP_LOGE(TAG, "startAdvertising(): start() failed");
+    return false;
+  }
+  ESP_LOGI(TAG, "startAdvertising(): success");
+  return true;
 }
 
 bool BluetoothManager::startScanning() {
-    scanner = NimBLEDevice::getScan();
-    if (!scanner) {
-        ESP_LOGE(TAG, "Failed to get scanner object");
-        return false;
-    }
-    
-    // Configure scanner
-    scanner->setAdvertisedDeviceCallbacks(new BitchatScanCallbacks(this));
-    scanner->setActiveScan(true); // Active scanning
-    scanner->setInterval(scanInterval);
-    scanner->setWindow(scanWindow);
-    
-    // Start continuous scanning
-    scanner->start(0, false);
-    ESP_LOGI(TAG, "Started scanning for BitChat devices");
-    return true;
+  scanner = NimBLEDevice::getScan();
+  if (!scanner) {
+    ESP_LOGE(TAG, "startScanning(): getScan() failed");
+    return false;
+  }
+  scanner->setAdvertisedDeviceCallbacks(new BitchatScanCallbacks(this));
+  scanner->setActiveScan(true);
+  scanner->setInterval(scanInterval);
+  scanner->setWindow(scanWindow);
+  scanner->start(0, false);
+  ESP_LOGI(TAG, "startScanning(): success");
+  return true;
 }
 
 void BluetoothManager::stopServices() {
-    if (!isActive) {
-        return;
-    }
-    
-    ESP_LOGI(TAG, "Stopping BitChat BLE services");
-    
-    // Stop advertising
-    if (advertising) {
-        advertising->stop();
-    }
-    
-    // Stop scanning
-    if (scanner) {
-        scanner->stop();
-    }
-    
-    // Disconnect all clients
-    disconnectAll();
-    
-    isActive = false;
-    ESP_LOGI(TAG, "BitChat BLE services stopped");
+  if (!isActive) return;
+  ESP_LOGI(TAG, "stopServices(): entry");
+  if (advertising) advertising->stop();
+  if (scanner) scanner->stop();
+  disconnectAll();
+  isActive = false;
+  ESP_LOGI(TAG, "stopServices(): exit");
 }
 
 bool BluetoothManager::broadcastPacket(const BitchatPacket& packet) {
-    if (!isActive || !txCharacteristic) {
-        ESP_LOGW(TAG, "Cannot broadcast - service not active");
+    if (!isActive || !txCharacteristic) return false;
+    auto data = BinaryProtocol::encode(packet);
+    if (data.empty()) {
+        ESP_LOGE(TAG, "broadcastPacket(): encode failed");
         return false;
     }
-    
-    // Encode packet
-    auto encodedData = BinaryProtocol::encode(packet);
-    if (encodedData.empty()) {
-        ESP_LOGE(TAG, "Failed to encode packet for broadcast");
-        return false;
-    }
-    
-    // Send to all connected devices via TX characteristic
-    txCharacteristic->notify();  // void return
+    txCharacteristic->setValue(data.data(), data.size());
+    txCharacteristic->notify();
     packetsSent++;
-    ESP_LOGV(TAG, "Broadcasted packet (%d bytes) to %d connected devices", encodedData.size(), getConnectionCount());
-
+    ESP_LOGV(TAG, "broadcastPacket(): sent %d bytes", data.size());
     return true;
-}
+    }
+    
 
 bool BluetoothManager::sendPacketToPeer(const BitchatPacket& packet, const std::string& deviceAddress) {
     // For simplicity, just broadcast (in a full implementation, this would target specific peer)

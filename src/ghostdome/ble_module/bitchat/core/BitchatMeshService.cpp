@@ -13,10 +13,13 @@
 #include <sstream>
 #include <algorithm>
 #include <memory>
+#include <esp_task_wdt.h>
+
 
 static const char* TAG = "BitchatMesh";
 
 namespace bitchat {
+    
 
 BitchatMeshService::BitchatMeshService()
     : isActive(false), messagesSent(0), messagesReceived(0), messagesRelayed(0) {
@@ -36,8 +39,6 @@ void BitchatMeshService::initializeComponents() {
     
     // Initialize IdentityManager first (other components depend on it)
     identityManager.reset(new IdentityManager());
-    
-    // Create other components
     protocol.reset(new BinaryProtocol());
     peerManager.reset(new PeerManager());
     messageRouter.reset(new MessageRouter());
@@ -74,48 +75,76 @@ void BitchatMeshService::setupCallbacks() {
 bool BitchatMeshService::startMesh(const std::string& deviceName) {
     if (isActive) {
         ESP_LOGW(TAG, "Mesh already running");
+        printf("Mesh already running\n");
         return true;
     }
 
-    ESP_LOGI(TAG, "Starting BitChat mesh service: %s", deviceName.c_str());
+    ESP_LOGI(TAG, "Starting BitChat mesh service (identity manager): %s", deviceName.c_str());
+    printf("Starting BitChat mesh service (identity manager): %s\n", deviceName.c_str());
 
     // Initialize IdentityManager first
     if (!identityManager->initialize()) {
         ESP_LOGE(TAG, "Failed to initialize IdentityManager");
+        printf("Failed to initialize IdentityManager\n");
         return false;
     }
+    
+    ESP_LOGI(TAG, "Step 1: IdentityManager initialized successfully");
+    printf("Step 1: IdentityManager initialized successfully\n");
+
+    // Step 2: Set nickname
+    ESP_LOGI(TAG, "Step 2: Setting nickname");
+    printf("Step 2: Setting nickname\n");
 
     // Set default nickname from identity
     if (currentNickname.empty()) {
         currentNickname = "GhostDome-" + identityManager->getPeerID().substr(0, 6);
     }
+    ESP_LOGI(TAG, "Step 2: Nickname set to: %s", currentNickname.c_str());
+    printf("Step 2: Nickname set to: %s\n", currentNickname.c_str());
 
-    // Initialize Bluetooth manager
+    
+    // Step 3: Initialize Bluetooth manager
+    ESP_LOGI(TAG, "Step 3: About to initialize Bluetooth manager");
+    printf("Step 3: About to initialize Bluetooth manager\n");
     if (!bluetoothManager->initialize(deviceName)) {
         ESP_LOGE(TAG, "Failed to initialize Bluetooth manager");
         return false;
     }
+    ESP_LOGI(TAG, "Step 3: Bluetooth manager initialized successfully");
+    printf("Step 3: Bluetooth manager initialized successfully\n");
 
-    // Generate static keys for Noise protocol (now uses IdentityManager keys)
+    // Step 4: Generate Noise keys
+    ESP_LOGI(TAG, "Step 4: About to generate Noise static keys");
     if (!noiseProtocol->generateStaticKeys()) {
         ESP_LOGE(TAG, "Failed to generate Noise static keys");
+        printf("Failed to generate Noise static keys\n");
         return false;
     }
+    ESP_LOGI(TAG, "Step 4: Noise static keys generated successfully");
+    printf("Step 4: Noise static keys generated successfully\n");
 
-    // Start Bluetooth services
+    // Step 5: Start Bluetooth services
+    ESP_LOGI(TAG, "Step 5: About to start Bluetooth services");
     if (!bluetoothManager->startServices()) {
         ESP_LOGE(TAG, "Failed to start Bluetooth services");
+        printf("Failed to start Bluetooth services\n");
         return false;
     }
-
+    ESP_LOGI(TAG, "Step 5: Bluetooth services started successfully");
+    printf("Step 5: Bluetooth services started successfully\n");
     isActive = true;
 
     // Send initial announcement after short delay
+    ESP_LOGI(TAG, "Step 6: About to create tasks");
+    printf("Step 6: About to create tasks\n");
     xTaskCreatePinnedToCore([](void* param) {
+        ESP_LOGI("InitialAnnounce", "Task started");
+        printf("Initial announcement task started\n");
         vTaskDelay(pdMS_TO_TICKS(1000)); // 1 second delay
         static_cast<BitchatMeshService*>(param)->sendAnnouncement();
         vTaskDelete(NULL);
-    }, "InitialAnnounce", 2048, this, 1, NULL, 1);
+    }, "InitialAnnounce", 8192, this, 1, NULL, 1);
 
     // Start periodic maintenance task
     xTaskCreatePinnedToCore([](void* param) {
@@ -132,9 +161,11 @@ bool BitchatMeshService::startMesh(const std::string& deviceName) {
             }
         }
         vTaskDelete(NULL);
-    }, "MeshMaintenance", 4096, this, 1, NULL, 1);
+    }, "MeshMaintenance", 8192, this, 1, NULL, 1);
 
+    ESP_LOGI(TAG, "Step 6: MeshMaintenance task created");
     ESP_LOGI(TAG, "✅ BitChat mesh service started successfully");
+    printf("BitChat mesh service started successfully\n");
     return true;
 }
 

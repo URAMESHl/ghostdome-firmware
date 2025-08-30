@@ -1,5 +1,7 @@
 #ifdef ENABLE_BITCHAT_MESH
-
+#include <FreeRTOS.h> // Required before task.h
+#include <freertos/task.h> // Required for uxTaskGetStackHighWaterMark()
+#include <esp_system.h> // Required for esp_get_free_heap_size()
 #include "IdentityManager.h"
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -8,6 +10,8 @@
 #include <mbedtls/ctr_drbg.h>
 #include <cstring>
 #include <sstream>
+
+
 
 static const char* TAG = "IdentityManager";
 
@@ -27,60 +31,84 @@ IdentityManager::~IdentityManager() {
 }
 
 bool IdentityManager::initialize() {
+    printf("IdentityManager::initialize() - Entry point\n");
+    printf("Heap: %u, Stack HWM: %u\n", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     std::lock_guard<std::mutex> lock(keysMutex);
-    
+
     if (initialized) {
+        printf("Already initialized, returning\n");
         return true;
     }
+
+    printf("Step 1: Opening NVS storage. Heap: %u, Stack HWM: %u\n", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+
+    // DON'T RE-INITIALIZE NVS - Meshtastic already did this
+    // Just open our namespace directly
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvsHandle);
+    printf("NVS open result: %d, nvsHandle: %p. Heap: %u, Stack HWM: %u\n", err, (void*)nvsHandle, esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     
-    ESP_LOGI(TAG, "Initializing BitChat IdentityManager");
-    
-    // Initialize NVS for persistent storage
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(err);
-    
-    // Open NVS handle
-    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvsHandle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(err));
+        printf("Error opening NVS handle: %s\n", esp_err_to_name(err));
         return false;
     }
-    
+
+    // Continue with the rest of your initialization...
+    printf("Step 2: Loading keys from storage...\n");
+
     // Try to load existing keys from storage
+    ESP_LOGD(TAG, "Attempting to load keys from storage... Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     bool keysLoaded = loadFromStorage();
-    
+    printf("Step 3: Keys loaded result: %s\n", keysLoaded ? "true" : "false");
+    ESP_LOGD(TAG, "Keys loaded from storage: %s. Heap: %u, Stack HWM: %u", keysLoaded ? "true" : "false", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+
     // Generate keys if they don't exist
     if (!keysLoaded || !noiseKeysGenerated) {
+          printf("Step 5: Generating noise keys...\n");
+        ESP_LOGD(TAG, "Noise keys not loaded or generated, attempting to generate... Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
         if (!generateNoiseKeys()) {
+            printf("ERROR: Failed to generate Noise keys\n");
             ESP_LOGE(TAG, "Failed to generate Noise keys");
             return false;
         }
+         printf("Step 6: Noise keys generated successfully\n");
+        ESP_LOGD(TAG, "Noise keys generation successful. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     }
-    
+     printf("Step 7: Checking signing keys...\n");
     if (!keysLoaded || !signingKeysGenerated) {
+        ESP_LOGD(TAG, "Signing keys not loaded or generated, attempting to generate... Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+        printf("Signing keys not loaded or generated, attempting to generate...\n");
         if (!generateSigningKeys()) {
             ESP_LOGE(TAG, "Failed to generate signing keys");
+            printf("ERROR: Failed to generate signing keys\n");
             return false;
         }
+        ESP_LOGD(TAG, "Signing keys generation successful. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     }
-    
+    printf("Step 8: Ensuring Peer ID...\n");
     // Generate peer ID if not loaded
     if (myPeerID.empty()) {
+        ESP_LOGD(TAG, "Peer ID empty, generating random Peer ID... Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+        printf("Peer ID empty, generating random Peer ID...\n");
         myPeerID = utils::toHexString(utils::generateRandomPeerID());
+        ESP_LOGD(TAG, "Generated Peer ID: %s. Heap: %u, Stack HWM: %u", myPeerID.c_str(), esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+        printf("Generated Peer ID: %s\n", myPeerID.c_str());
         saveToStorage(); // Save the new peer ID
+        ESP_LOGD(TAG, "New Peer ID saved to storage. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+        printf("New Peer ID saved to storage.\n");
     }
-    
+
     initialized = true;
     
     ESP_LOGI(TAG, "IdentityManager initialized successfully");
+    printf("Step 9: IdentityManager initialization complete\n");
     ESP_LOGI(TAG, "Peer ID: %s", myPeerID.c_str());
+    printf("Peer ID: %s\n", myPeerID.c_str());
     ESP_LOGI(TAG, "Noise Fingerprint: %s", getNoiseFingerprint().substr(0, 16).c_str());
+    printf("Noise Fingerprint: %s\n", getNoiseFingerprint().substr(0, 16).c_str());
     ESP_LOGI(TAG, "Signing Fingerprint: %s", getSigningFingerprint().substr(0, 16).c_str());
-    
+    printf("Signing Fingerprint: %s\n", getSigningFingerprint().substr(0, 16).c_str());
+    ESP_LOGD(TAG, "IdentityManager::initialize() - Exit. Heap: %u, Stack HWM: %u", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
+    printf("IdentityManager::initialize() - Exit. Heap: %u, Stack HWM: %u\n", esp_get_free_heap_size(), uxTaskGetStackHighWaterMark(NULL));
     return true;
 }
 
@@ -112,10 +140,10 @@ void IdentityManager::shutdown() {
     initialized = false;
     ESP_LOGI(TAG, "IdentityManager shutdown complete");
 }
-
+    
 bool IdentityManager::generateNoiseKeys() {
     ESP_LOGI(TAG, "Generating X25519 Noise protocol keys");
-    
+    printf("Generating X25519 Noise protocol keys\n");
     // For now, use simplified key generation (replace with proper X25519 in production)
     // TODO: Replace with rweather/Crypto X25519 implementation
     if (!generateX25519KeyPair()) {
@@ -125,23 +153,27 @@ bool IdentityManager::generateNoiseKeys() {
     noiseKeysGenerated = true;
     ESP_LOGI(TAG, "✅ X25519 Noise keys generated successfully");
     ESP_LOGW(TAG, "⚠️  Using simplified X25519 - replace with rweather/Crypto for production");
-    
+    printf("X25519 Noise keys generated successfully\n");
+    printf("⚠️  Using simplified X25519 - replace with rweather/Crypto for production\n");
+
     return true;
 }
 
 std::array<uint8_t, 32> IdentityManager::getNoisePrivateKey() const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Accessing Noise private key\n");
     return noisePrivateKey;
 }
 
 std::array<uint8_t, 32> IdentityManager::getNoisePublicKey() const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Accessing Noise public key\n");
     return noisePublicKey;
 }
 
 std::string IdentityManager::getNoiseFingerprint() const {
     std::lock_guard<std::mutex> lock(keysMutex);
-    
+    printf("Accessing Noise fingerprint\n");
     if (!noiseKeysGenerated) {
         return "";
     }
@@ -150,11 +182,12 @@ std::string IdentityManager::getNoiseFingerprint() const {
     std::vector<uint8_t> pubKeyVec(noisePublicKey.begin(), noisePublicKey.end());
     auto hash = utils::sha256(pubKeyVec);
     return utils::toHexString(hash);
+
 }
 
 bool IdentityManager::generateSigningKeys() {
     ESP_LOGI(TAG, "Generating Ed25519 signing keys");
-    
+    printf("Generating Ed25519 signing keys\n");
     // For now, use simplified key generation (replace with proper Ed25519 in production)
     // TODO: Replace with rweather/Crypto Ed25519 implementation
     if (!generateEd25519KeyPair()) {
@@ -170,17 +203,19 @@ bool IdentityManager::generateSigningKeys() {
 
 std::array<uint8_t, 64> IdentityManager::getSigningPrivateKey() const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Accessing Ed25519 signing private key\n");
     return signingPrivateKey;
 }
 
 std::array<uint8_t, 32> IdentityManager::getSigningPublicKey() const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Accessing Ed25519 signing public key\n");
     return signingPublicKey;
 }
 
 std::string IdentityManager::getSigningFingerprint() const {
     std::lock_guard<std::mutex> lock(keysMutex);
-    
+    printf("Accessing Ed25519 signing fingerprint\n");
     if (!signingKeysGenerated) {
         return "";
     }
@@ -193,7 +228,8 @@ std::string IdentityManager::getSigningFingerprint() const {
 
 std::string IdentityManager::getIdentityFingerprint() const {
     std::lock_guard<std::mutex> lock(keysMutex);
-    
+    printf("Accessing identity fingerprint\n");
+
     // Combined fingerprint: SHA-256(noise_pubkey || signing_pubkey)
     std::vector<uint8_t> combined;
     combined.insert(combined.end(), noisePublicKey.begin(), noisePublicKey.end());
@@ -205,12 +241,14 @@ std::string IdentityManager::getIdentityFingerprint() const {
 
 std::string IdentityManager::getPeerID() const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Accessing peer ID\n");
     return myPeerID;
 }
 
 void IdentityManager::setPeerID(const std::string& peerID) {
     std::lock_guard<std::mutex> lock(keysMutex);
     myPeerID = peerID;
+    printf("Peer ID set to: %s\n", myPeerID.c_str());
     saveToStorage();
 }
 
@@ -218,7 +256,8 @@ bool IdentityManager::setChannelPassword(const std::string& channelName, const s
     std::lock_guard<std::mutex> lock(keysMutex);
     
     ESP_LOGI(TAG, "Setting password for channel: %s", channelName.c_str());
-    
+    printf("Setting password for channel: %s\n", channelName.c_str());
+
     ChannelKey channelKey;
     channelKey.channelName = channelName;
     channelKey.createdTime = esp_timer_get_time() / 1000;
@@ -226,7 +265,8 @@ bool IdentityManager::setChannelPassword(const std::string& channelName, const s
     
     // Generate random salt
     esp_fill_random(channelKey.salt.data(), PBKDF2_SALT_SIZE);
-    
+    printf("Generated random salt for channel: %s\n", channelName.c_str());
+
     // Derive key from password using PBKDF2-HMAC-SHA256
     if (!deriveChannelKey(password, channelKey.salt, channelKey.iterations, channelKey.key)) {
         ESP_LOGE(TAG, "Failed to derive channel key for %s", channelName.c_str());
@@ -240,11 +280,13 @@ bool IdentityManager::setChannelPassword(const std::string& channelName, const s
     saveToStorage();
     
     ESP_LOGI(TAG, "✅ Channel password set for: %s", channelName.c_str());
+    printf("Channel password set for: %s\n", channelName.c_str());
     return true;
 }
 
 bool IdentityManager::hasChannelPassword(const std::string& channelName) const {
     std::lock_guard<std::mutex> lock(keysMutex);
+    printf("Checking if channel password exists for: %s\n", channelName.c_str());
     return channelKeys.find(channelName) != channelKeys.end();
 }
 
@@ -760,6 +802,7 @@ bool IdentityManager::aesGcmDecrypt(const std::array<uint8_t, 32>& key,
     int ret = mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key.data(), 256);
     if (ret != 0) {
         ESP_LOGE(TAG, "GCM setkey failed: %d", ret);
+        printf("Failed to set GCM key\n");
         mbedtls_gcm_free(&ctx);
         return false;
     }
@@ -786,6 +829,7 @@ bool IdentityManager::aesGcmDecrypt(const std::array<uint8_t, 32>& key,
     
     if (ret != 0) {
         ESP_LOGE(TAG, "GCM decrypt failed: %d", ret);
+        printf("Failed to decrypt GCM: %d\n", ret);
         return false;
     }
     
