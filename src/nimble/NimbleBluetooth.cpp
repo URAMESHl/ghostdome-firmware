@@ -328,10 +328,22 @@ void NimbleBluetooth::setupService()
 void NimbleBluetooth::startAdvertising()
 {
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->reset();
-    pAdvertising->addServiceUUID(MESH_SERVICE_UUID);
+    printf("add BITCHAT_SERVICE_UUID\n");
+    pAdvertising->addServiceUUID(BITCHAT_SERVICE_UUID);
+
+    std::string mfg;
+    mfg.push_back(0xFF);
+    mfg.push_back(0xFF);
+    pAdvertising->setManufacturerData(mfg);
+
     pAdvertising->addServiceUUID(NimBLEUUID((uint16_t)0x180f)); // 0x180F is the Battery Service
+    printf("TRACE: startAdvertising() entry\n");
+
+
+    pAdvertising->setMinInterval(0x20);
+    pAdvertising->setMaxInterval(0x40);
     pAdvertising->start(0);
+    printf("TRACE: startAdvertising() exit\n");
 }
 
 /// Given a level between 0-100, update the BLE attribute
